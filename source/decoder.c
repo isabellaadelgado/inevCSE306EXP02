@@ -84,7 +84,7 @@ unsigned char* decrypt_map_to_memory(const char* filepath, long* out_map_size) {
         return NULL;
     }
 
-    if (fread(ciphertext, 1, ciphertext_len, in_file) != ciphertext_len) {
+    if (fread(ciphertext, 1, ciphertext_len, in_file) != (size_t)ciphertext_len) {
         fprintf(stderr, "Erro ao ler mapa.\n");
         fclose(in_file);
         free(ciphertext);
@@ -270,7 +270,7 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    bool error_occurred = false; // ✅ correct placement
+    bool error_occurred = false;
 
     for (int i = 0; i < num_carriers_from_map; i++) {
         struct stat statbuf;
@@ -302,7 +302,7 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
-            if (length == 0 || length > 10*1024*1024) {
+            if (length == 0) {
                 fprintf(stderr, "Erro: length invalido.\n");
                 error_occurred = true;
                 break;

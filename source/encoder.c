@@ -234,7 +234,8 @@ int main(int argc, char* argv[]) {
     printf("--- Initiating Hybrid Greedy Search ---\n");
     unsigned char literal_buffer[127];
     int literal_count = 0;
-    long long total_bytes_processed = 0;
+    size_t total_bytes_processed = 0;
+
 
     for (size_t i = 0; i < secret_size; ) {
         const char* remaining_secret = secret_data + i;
