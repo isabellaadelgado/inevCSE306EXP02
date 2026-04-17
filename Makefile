@@ -30,7 +30,7 @@ TEST_BASIC   = tests/testBasic
 
 all: $(TARGETS)
 
-encoder: $(OBJS_ENCODER)
+encoder: $(OBJS_ENCODER) $(OBJ_CLI) $(OBJ_IMAGE)
 	@echo "Linking encoder..."
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -40,7 +40,7 @@ decoder: $(OBJS_DECODER)
 
 source/%.o: source/%.c
 	@echo "Compiling $<..."
-	$(CC) $(CFLAGS) -c $< -o $@ -MMD
+	$(CC) $(CFLAGS) -I./src/cli -I./src/image -c $< -o $@ -MMD
 
 src/cli/%.o: src/cli/%.c
 	@echo "Compiling $<..."

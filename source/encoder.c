@@ -3,7 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include "cli.h"
+#include "image.h"
 
 #ifdef _WIN32
 #include <conio.h>
@@ -169,30 +170,42 @@ void flush_literal_buffer(FILE* map_file, unsigned char* buffer, int* count) {
 }
 
 int main(int argc, char* argv[]) {
-    bool strict_mode = false;
-    char** args = malloc(argc * sizeof(char*));
-    int arg_count = 0;
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--strict") == 0) strict_mode = true;
-        else args[arg_count++] = argv[i];
+    cli_config_t cfg;
+    if (parse_cli_args(argc, argv, &cfg) != 0) return EXIT_FAILURE;
+    if (cfg.strict_mode) printf("--- Running strict mode ---\n");
+
+    if (cfg.mode == MODE_IMAGE) {
+        for (int i = 0; i < cfg.num_carriers; i++) {
+            image_format_t fmt = format_from_extension(cfg.carrier_files[i]);
+            if (fmt == IMG_UNSUPPORTED) {
+                fprintf(stderr, "Error: Unsupported file format for '%s'. "
+                        "Supported: .bmp, .jpg, .png, .gif, .tiff, .raw\n",
+                        cfg.carrier_files[i]);
+                return EXIT_FAILURE;
+            }
+            printf("  - Detected format: %s for %s\n",
+                   format_name(fmt), cfg.carrier_files[i]);
+        }
     }
 
-    if (arg_count < 2) { fprintf(stderr, "Use: %s [--strict] <secret_file> <carrier1> ...\n", argv[0]); free(args); return 1; }
-    if (strict_mode) printf("--- Running strict mode ---\n");
+    printf("Encoding: %s, Mode: %s\n",
+           cfg.encoding == ENC_ASCII ? "ASCII" :
+           cfg.encoding == ENC_UTF8  ? "UTF-8" : "UTF-16",
+           cfg.mode == MODE_TEXT ? "text" : "image");
 
-    const char* secret_filename = args[0];
+    const char* secret_filename = cfg.secret_file;
     const char* map_filename = "map.txt";
     size_t secret_size;
     char* secret_data = read_file_to_buffer(secret_filename, &secret_size);
-    if (!secret_data) { perror("Wasn't possible to read the secret file"); free(args); return 1; }
+    if (!secret_data) { perror("Wasn't possible to read the secret file"); return 1; }
 
-    int num_carriers = arg_count - 1;
+    int num_carriers = cfg.num_carriers;
     if (num_carriers > 65535) { fprintf(stderr, "Error: Limit of 65535 rechean.\n"); return 1; }
     struct Carrier* carriers = malloc(num_carriers * sizeof(struct Carrier));
 
     printf("--- Loading and indexing carries files... ---\n");
     for (int i = 0; i < num_carriers; i++) {
-        carriers[i].filename = args[i + 1];
+        carriers[i].filename = cfg.carrier_files[i];
         carriers[i].data = NULL;
         carriers[i].index.tree = NULL;
         carriers[i].engine = ENGINE_SAFE_SEARCH;
@@ -270,13 +283,13 @@ int main(int argc, char* argv[]) {
             fwrite(&length16, sizeof(uint16_t), 1, map_file);
             i += best_match_len;
         } else {
-            if (strict_mode) {
+            if (cfg.strict_mode) {
                 fprintf(stderr, "\n\nFatal Error (Strict mode): Was not possible to find a correspondet byte for the position %zu.\n", i);
                 fclose(map_file); remove(map_filename); free(secret_data);
                 for (int k = 0; k < num_carriers; k++) {
                     if(carriers[k].data) { free(carriers[k].data); if(carriers[k].engine == ENGINE_SUFFIX_TREE && carriers[k].index.tree) st_free(carriers[k].index.tree); }
                 }
-                free(carriers); free(args);
+                free(carriers);
                 return EXIT_FAILURE;
             }
             literal_buffer[literal_count++] = remaining_secret[0];
@@ -304,7 +317,6 @@ int main(int argc, char* argv[]) {
         if(carriers[i].data) { free(carriers[i].data); if(carriers[i].engine == ENGINE_SUFFIX_TREE && carriers[i].index.tree) st_free(carriers[i].index.tree); }
     }
     free(carriers);
-    free(args);
 
     return 0;
 }
