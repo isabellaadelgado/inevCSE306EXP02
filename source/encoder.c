@@ -139,11 +139,15 @@ int safe_find_longest_prefix_match(const char* carrier_data, size_t carrier_size
 int calculate_sha256_raw(const char *filepath, unsigned char *output_hash) {
     FILE *file = fopen(filepath, "rb");
     if (!file) return -1;
-
+    
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-    if (!ctx) return -1;
+    if (!ctx) { fclose(file); return -1; }
 
-    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) return -1;
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
+        EVP_MD_CTX_free(ctx);
+        fclose(file);
+        return -1;
+    }
 
     unsigned char buffer[4096];
     size_t bytesRead;
