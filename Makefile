@@ -15,6 +15,15 @@ OBJS_ENCODER = $(SRCS_ENCODER:.c=.o)
 SRCS_DECODER = source/decoder.c
 OBJS_DECODER = $(SRCS_DECODER:.c=.o)
 
+SRC_CLI   = src/cli/cli.c
+OBJ_CLI   = $(SRC_CLI:.c=.o)
+
+SRC_IMAGE = src/image/image.c
+OBJ_IMAGE = $(SRC_IMAGE:.c=.o)
+
+TEST_CLI   = tests/testCli
+TEST_IMAGE = tests/testImage
+
 TEST_ENCODER = tests/testEncoder
 TEST_DECODER = tests/testDecoder
 TEST_BASIC   = tests/testBasic
@@ -32,6 +41,22 @@ decoder: $(OBJS_DECODER)
 source/%.o: source/%.c
 	@echo "Compiling $<..."
 	$(CC) $(CFLAGS) -c $< -o $@ -MMD
+
+src/cli/%.o: src/cli/%.c
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS) -I./src/cli -c $< -o $@ -MMD
+
+src/image/%.o: src/image/%.c
+	@echo "Compiling $<..."
+	$(CC) $(CFLAGS) -I./src/image -c $< -o $@ -MMD
+
+$(TEST_CLI): tests/testCli.c $(OBJ_CLI)
+	@echo "Building testCli..."
+	$(CC) $(CFLAGS) -I./src/cli -o $@ $^
+
+$(TEST_IMAGE): tests/testImage.c $(OBJ_IMAGE)
+	@echo "Building testImage..."
+	$(CC) $(CFLAGS) -I./src/image -o $@ $^
 
 $(TEST_ENCODER): tests/testEncoder.c
 	@echo "Building testEncoder..."
