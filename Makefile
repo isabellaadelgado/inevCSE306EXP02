@@ -1,10 +1,9 @@
 CC = gcc
 CFLAGS  += -I/mingw64/include
-LDFLAGS += -L/mingw64/lib -lssl -lcrypto
 
-CFLAGS = -Wall -g -I./source
+CFLAGS += -Wall -Wextra -std=c11 -g -I./source
 
-LDFLAGS = -lssl -lcrypto
+LDFLAGS += -lssl -lcrypto
 
 # --- Targets ---
 
