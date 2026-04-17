@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,25 +42,24 @@ struct Carrier {
     } index;
 };
 
-
 #ifdef _WIN32
 char *getpass(const char *prompt) {
-	static char password[128];
-	int i = 0;
-	int ch;
+    static char password[128];
+    int i = 0, ch;
 
-	fprintf(stderr, "%s", prompt);
+    fprintf(stderr, "%s", prompt);
 
-	while ((ch = _getch()) != '\r') {
-		if (ch == '\b') {
-			if (i > 0) i--;
-		} else if (i < (int)sizeof(password) - 1) {
-			password[i++] = (char)ch;
-		}
-	}
-	password[i] = '\0';
-	fprintf(stderr, "\n");
-	return password;
+    while ((ch = _getch()) != '\r') {
+        if (ch == '\b') {
+            if (i > 0) i--;
+        } else if (i < (int)sizeof(password) - 1) {
+            password[i++] = (char)ch;
+        }
+    }
+
+    password[i] = '\0';
+    fprintf(stderr, "\n");
+    return password;
 }
 #endif
 
@@ -135,19 +136,25 @@ int safe_find_longest_prefix_match(const char* carrier_data, size_t carrier_size
 }
 
 int calculate_sha256_raw(const char *filepath, unsigned char *output_hash) {
-    struct stat statbuf;
-    if (stat(filepath, &statbuf) != 0 || !S_ISREG(statbuf.st_mode)) return -1;
     FILE *file = fopen(filepath, "rb");
     if (!file) return -1;
-    SHA256_CTX sha256_context;
-    SHA256_Init(&sha256_context);
-    const int bufSize = 4096;
-    unsigned char buffer[bufSize];
-    size_t bytesRead = 0;
-    while ((bytesRead = fread(buffer, 1, bufSize, file))) {
-        SHA256_Update(&sha256_context, buffer, bytesRead);
+
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    if (!ctx) return -1;
+
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) return -1;
+
+    unsigned char buffer[4096];
+    size_t bytesRead;
+
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file))) {
+        EVP_DigestUpdate(ctx, buffer, bytesRead);
     }
-    SHA256_Final(output_hash, &sha256_context);
+
+    unsigned int len;
+    EVP_DigestFinal_ex(ctx, output_hash, &len);
+
+    EVP_MD_CTX_free(ctx);
     fclose(file);
     return 0;
 }
