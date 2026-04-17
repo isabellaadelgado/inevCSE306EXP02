@@ -1,0 +1,311 @@
+        -:    0:Source:source/encoder.c
+        -:    1:#define _GNU_SOURCE
+        -:    2:#include <unistd.h>
+        -:    3:#include <stdio.h>
+        -:    4:#include <stdlib.h>
+        -:    5:#include <string.h>
+        -:    6:
+        -:    7:
+        -:    8:#ifdef _WIN32
+        -:    9:#include <conio.h>
+        -:   10:#else
+        -:   11:#include <unistd.h>
+        -:   12:#endif
+        -:   13:
+        -:   14:
+        -:   15:#include <stdint.h>
+        -:   16:#include <sys/stat.h>
+        -:   17:#include <stdbool.h>
+        -:   18:#include "suffix_tree.h"
+        -:   19:#include <openssl/sha.h>
+        -:   20:#include <openssl/evp.h>
+        -:   21:#include <openssl/rand.h>
+        -:   22:
+        -:   23:
+        -:   24:#define MIN_MATCH_LEN 8
+        -:   25:#define SALT_SIZE 16
+        -:   26:#define KEY_SIZE 32 // AES-256
+        -:   27:#define IV_SIZE 16  // AES block size
+        -:   28:#define MAP_VERSION 2
+        -:   29:
+        -:   30:enum EngineType {
+        -:   31:    ENGINE_SUFFIX_TREE,
+        -:   32:    ENGINE_SAFE_SEARCH
+        -:   33:};
+        -:   34:
+        -:   35:struct Carrier {
+        -:   36:    const char* filename;
+        -:   37:    char* data;
+        -:   38:    size_t size;
+        -:   39:    enum EngineType engine;
+        -:   40:    union {
+        -:   41:        SuffixTree* tree;
+        -:   42:    } index;
+        -:   43:};
+        -:   44:
+        -:   45:#ifdef _WIN32
+        -:   46:char *getpass(const char *prompt) {
+        -:   47:    static char password[128];
+        -:   48:    int i = 0, ch;
+        -:   49:
+        -:   50:    fprintf(stderr, "%s", prompt);
+        -:   51:
+        -:   52:    while ((ch = _getch()) != '\r') {
+        -:   53:        if (ch == '\b') {
+        -:   54:            if (i > 0) i--;
+        -:   55:        } else if (i < (int)sizeof(password) - 1) {
+        -:   56:            password[i++] = (char)ch;
+        -:   57:        }
+        -:   58:    }
+        -:   59:
+        -:   60:    password[i] = '\0';
+        -:   61:    fprintf(stderr, "\n");
+        -:   62:    return password;
+        -:   63:}
+        -:   64:#endif
+        -:   65:
+        1:   66:int encrypt_file(const char* filepath) {
+        1:   67:    char *password = getpass("Insert the password to encrypt the map file. ");
+        1:   68:    if (!password || strlen(password) == 0) { fprintf(stderr, "\nEmpty password. Encripyting failed.\n"); return -1; }
+    #####:   69:    FILE* in_file = fopen(filepath, "rb");
+    #####:   70:    if (!in_file) { perror("Was not possible to re-open the map file."); return -1; }
+    #####:   71:    fseek(in_file, 0, SEEK_END);
+    #####:   72:    long plaintext_len = ftell(in_file);
+    #####:   73:    fseek(in_file, 0, SEEK_SET);
+    #####:   74:    unsigned char* plaintext = malloc(plaintext_len);
+    #####:   75:    if (!plaintext) { perror("Error allocating memory."); fclose(in_file); return -1; }
+    #####:   76:    fread(plaintext, 1, plaintext_len, in_file);
+    #####:   77:    fclose(in_file);
+        -:   78:    unsigned char salt[SALT_SIZE];
+    #####:   79:    if (RAND_bytes(salt, sizeof(salt)) != 1) { free(plaintext); return -1; }
+        -:   80:    unsigned char key[KEY_SIZE], iv[IV_SIZE], derived_bytes[KEY_SIZE + IV_SIZE];
+    #####:   81:    if (PKCS5_PBKDF2_HMAC(password, strlen(password), salt, sizeof(salt), 4096, EVP_sha256(), sizeof(derived_bytes), derived_bytes) == 0) { free(plaintext); return -1; }
+    #####:   82:    memcpy(key, derived_bytes, sizeof(key));
+    #####:   83:    memcpy(iv, derived_bytes + sizeof(key), sizeof(iv));
+    #####:   84:    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    #####:   85:    EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv);
+        -:   86:    int ciphertext_len;
+    #####:   87:    unsigned char* ciphertext = malloc(plaintext_len + IV_SIZE);
+        -:   88:    int len;
+    #####:   89:    EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, plaintext_len);
+    #####:   90:    ciphertext_len = len;
+    #####:   91:    EVP_EncryptFinal_ex(ctx, ciphertext + len, &len);
+    #####:   92:    ciphertext_len += len;
+    #####:   93:    EVP_CIPHER_CTX_free(ctx);
+    #####:   94:    free(plaintext);
+    #####:   95:    FILE* out_file = fopen(filepath, "wb");
+    #####:   96:    if (!out_file) { free(ciphertext); return -1; }
+    #####:   97:    fwrite("LIDECENC", 1, 8, out_file);
+    #####:   98:    fwrite(salt, 1, sizeof(salt), out_file);
+    #####:   99:    fwrite(ciphertext, 1, ciphertext_len, out_file);
+    #####:  100:    fclose(out_file);
+    #####:  101:    free(ciphertext);
+    #####:  102:    printf("\nMap file '%s' sucessfully encrpyted.\n", filepath);
+    #####:  103:    return 0;
+        -:  104:}
+        -:  105:
+        1:  106:char* read_file_to_buffer(const char* filename, size_t* out_size) {
+        -:  107:    struct stat statbuf;
+        1:  108:    if (stat(filename, &statbuf) != 0 || !S_ISREG(statbuf.st_mode)) {
+    #####:  109:        return NULL; // isn't a regular file or stat fail
+        -:  110:    }
+        1:  111:    *out_size = statbuf.st_size;
+        1:  112:    FILE* file = fopen(filename, "rb");
+       1*:  113:    if (!file) return NULL;
+        1:  114:    char* buffer = (char*)malloc(*out_size);
+       1*:  115:    if (!buffer) { fclose(file); return NULL; }
+        1:  116:    if (fread(buffer, 1, *out_size, file) != *out_size) {
+    #####:  117:        free(buffer); fclose(file); return NULL;
+        -:  118:    }
+        1:  119:    fclose(file);
+        1:  120:    return buffer;
+        -:  121:}
+        -:  122:
+    #####:  123:const char* find_pattern(const char* text, size_t text_len, const char* pattern, size_t pattern_len) {
+    #####:  124:    if (pattern_len == 0 || pattern_len > text_len) return NULL;
+    #####:  125:    for (size_t i = 0; i <= text_len - pattern_len; i++) {
+    #####:  126:        if (memcmp(text + i, pattern, pattern_len) == 0) return text + i;
+        -:  127:    }
+    #####:  128:    return NULL;
+        -:  129:}
+        -:  130:
+    #####:  131:int safe_find_longest_prefix_match(const char* carrier_data, size_t carrier_size, const char* secret_prefix, size_t max_len) {
+    #####:  132:    for (int len = max_len; len >= MIN_MATCH_LEN; len--) {
+    #####:  133:        if (find_pattern(carrier_data, carrier_size, secret_prefix, len) != NULL) return len;
+        -:  134:    }
+    #####:  135:    return 0;
+        -:  136:}
+        -:  137:
+    #####:  138:int calculate_sha256_raw(const char *filepath, unsigned char *output_hash) {
+    #####:  139:    FILE *file = fopen(filepath, "rb");
+    #####:  140:    if (!file) return -1;
+        -:  141:
+    #####:  142:    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    #####:  143:    if (!ctx) return -1;
+        -:  144:
+    #####:  145:    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) return -1;
+        -:  146:
+        -:  147:    unsigned char buffer[4096];
+        -:  148:    size_t bytesRead;
+        -:  149:
+    #####:  150:    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file))) {
+    #####:  151:        EVP_DigestUpdate(ctx, buffer, bytesRead);
+        -:  152:    }
+        -:  153:
+        -:  154:    unsigned int len;
+    #####:  155:    EVP_DigestFinal_ex(ctx, output_hash, &len);
+        -:  156:
+    #####:  157:    EVP_MD_CTX_free(ctx);
+    #####:  158:    fclose(file);
+    #####:  159:    return 0;
+        -:  160:}
+        -:  161:
+       13:  162:void flush_literal_buffer(FILE* map_file, unsigned char* buffer, int* count) {
+       13:  163:    if (*count > 0) {
+       13:  164:        uint8_t control_byte = (uint8_t)(*count);
+       13:  165:        fwrite(&control_byte, 1, 1, map_file);
+       13:  166:        fwrite(buffer, 1, *count, map_file);
+       13:  167:        *count = 0;
+        -:  168:    }
+       13:  169:}
+        -:  170:
+        1:  171:int main(int argc, char* argv[]) {
+        1:  172:    bool strict_mode = false;
+        1:  173:    char** args = malloc(argc * sizeof(char*));
+        1:  174:    int arg_count = 0;
+        3:  175:    for (int i = 1; i < argc; i++) {
+       2*:  176:        if (strcmp(argv[i], "--strict") == 0) strict_mode = true;
+        2:  177:        else args[arg_count++] = argv[i];
+        -:  178:    }
+        -:  179:
+       1*:  180:    if (arg_count < 2) { fprintf(stderr, "Use: %s [--strict] <secret_file> <carrier1> ...\n", argv[0]); free(args); return 1; }
+       1*:  181:    if (strict_mode) printf("--- Running strict mode ---\n");
+        -:  182:
+        1:  183:    const char* secret_filename = args[0];
+        1:  184:    const char* map_filename = "map.txt";
+        -:  185:    size_t secret_size;
+        1:  186:    char* secret_data = read_file_to_buffer(secret_filename, &secret_size);
+       1*:  187:    if (!secret_data) { perror("Wasn't possible to read the secret file"); free(args); return 1; }
+        -:  188:
+        1:  189:    int num_carriers = arg_count - 1;
+       1*:  190:    if (num_carriers > 65535) { fprintf(stderr, "Error: Limit of 65535 rechean.\n"); return 1; }
+        1:  191:    struct Carrier* carriers = malloc(num_carriers * sizeof(struct Carrier));
+        -:  192:
+        1:  193:    printf("--- Loading and indexing carries files... ---\n");
+        2:  194:    for (int i = 0; i < num_carriers; i++) {
+        1:  195:        carriers[i].filename = args[i + 1];
+        1:  196:        carriers[i].data = NULL;
+        1:  197:        carriers[i].index.tree = NULL;
+        1:  198:        carriers[i].engine = ENGINE_SAFE_SEARCH;
+        -:  199:
+        1:  200:        if (strcmp(secret_filename, carriers[i].filename) == 0) continue;
+        -:  201:        
+    #####:  202:        carriers[i].data = read_file_to_buffer(carriers[i].filename, &carriers[i].size);
+    #####:  203:        if (!carriers[i].data) {
+    #####:  204:            fprintf(stderr, "Warning: Wasn't possibel to read the %s file, will be ignored.\n", carriers[i].filename);
+    #####:  205:            continue;
+        -:  206:        }
+        -:  207:        
+    #####:  208:        printf("  - Loading: %s (%zu bytes)\n", carriers[i].filename, carriers[i].size);
+    #####:  209:        carriers[i].engine = ENGINE_SUFFIX_TREE; // Try to use the tree firts
+    #####:  210:        carriers[i].index.tree = st_create(carriers[i].data, carriers[i].size);
+    #####:  211:        if (!carriers[i].index.tree) {
+    #####:  212:            fprintf(stderr, "    Warning: Fail in the tree suffix (incompatible file?), using secure motor.\n");
+    #####:  213:            carriers[i].engine = ENGINE_SAFE_SEARCH;
+        -:  214:        }
+        -:  215:    }
+        -:  216:
+        1:  217:    FILE* map_file = fopen(map_filename, "wb");
+        1:  218:    uint16_t version = MAP_VERSION;
+        1:  219:    fwrite("LIDECMAP", 1, 8, map_file);
+        1:  220:    fwrite(&version, sizeof(uint16_t), 1, map_file);
+        1:  221:    uint16_t num_carriers_u16 = (uint16_t)num_carriers;
+        1:  222:    fwrite(&num_carriers_u16, sizeof(uint16_t), 1, map_file);
+        -:  223:
+        2:  224:    for (int i = 0; i < num_carriers; i++) {
+        -:  225:        unsigned char hash[SHA256_DIGEST_LENGTH];
+       1*:  226:        if (carriers[i].data && calculate_sha256_raw(carriers[i].filename, hash) == 0) {
+    #####:  227:            fwrite(hash, 1, SHA256_DIGEST_LENGTH, map_file);
+        -:  228:        } else {
+        1:  229:            memset(hash, 0, SHA256_DIGEST_LENGTH);
+        1:  230:            fwrite(hash, 1, SHA256_DIGEST_LENGTH, map_file);
+        -:  231:        }
+        -:  232:    }
+        -:  233:
+        1:  234:    printf("--- Initiating Hybrid Greedy Search ---\n");
+        -:  235:    unsigned char literal_buffer[127];
+        1:  236:    int literal_count = 0;
+        1:  237:    size_t total_bytes_processed = 0;
+        -:  238:
+        -:  239:
+     1626:  240:    for (size_t i = 0; i < secret_size; ) {
+     1625:  241:        const char* remaining_secret = secret_data + i;
+     1625:  242:        size_t remaining_len = secret_size - i;
+     1625:  243:        int best_match_len = 0;
+     1625:  244:        int best_carrier_index = -1;
+        -:  245:
+     3250:  246:        for (int j = 0; j < num_carriers; j++) {
+     1625:  247:            if (!carriers[j].data) continue;
+    #####:  248:            int current_match_len = 0;
+    #####:  249:            switch (carriers[j].engine) {
+    #####:  250:                case ENGINE_SUFFIX_TREE:
+    #####:  251:                    if (carriers[j].index.tree) current_match_len = st_find_longest_match(carriers[j].index.tree, remaining_secret, remaining_len);
+    #####:  252:                    break;
+    #####:  253:                case ENGINE_SAFE_SEARCH:
+    #####:  254:                    current_match_len = safe_find_longest_prefix_match(carriers[j].data, carriers[j].size, remaining_secret, remaining_len);
+    #####:  255:                    break;
+        -:  256:            }
+    #####:  257:            if (current_match_len > best_match_len) { best_match_len = current_match_len; best_carrier_index = j; }
+        -:  258:        }
+        -:  259:
+     1625:  260:        if (best_match_len >= MIN_MATCH_LEN) {
+    #####:  261:            flush_literal_buffer(map_file, literal_buffer, &literal_count);
+    #####:  262:            const char* found_ptr = find_pattern(carriers[best_carrier_index].data, carriers[best_carrier_index].size, remaining_secret, best_match_len);
+    #####:  263:            uint32_t offset = found_ptr - carriers[best_carrier_index].data;
+    #####:  264:            uint8_t control = 0x80;
+    #####:  265:            uint16_t carrier_idx_u16 = (uint16_t)best_carrier_index;
+    #####:  266:            uint16_t length16 = (uint16_t)best_match_len;
+    #####:  267:            fwrite(&control, 1, 1, map_file);
+    #####:  268:            fwrite(&carrier_idx_u16, sizeof(uint16_t), 1, map_file);
+    #####:  269:            fwrite(&offset, sizeof(uint32_t), 1, map_file);
+    #####:  270:            fwrite(&length16, sizeof(uint16_t), 1, map_file);
+    #####:  271:            i += best_match_len;
+        -:  272:        } else {
+     1625:  273:            if (strict_mode) {
+    #####:  274:                fprintf(stderr, "\n\nFatal Error (Strict mode): Was not possible to find a correspondet byte for the position %zu.\n", i);
+    #####:  275:                fclose(map_file); remove(map_filename); free(secret_data);
+    #####:  276:                for (int k = 0; k < num_carriers; k++) {
+    #####:  277:                    if(carriers[k].data) { free(carriers[k].data); if(carriers[k].engine == ENGINE_SUFFIX_TREE && carriers[k].index.tree) st_free(carriers[k].index.tree); }
+        -:  278:                }
+    #####:  279:                free(carriers); free(args);
+    #####:  280:                return EXIT_FAILURE;
+        -:  281:            }
+     1625:  282:            literal_buffer[literal_count++] = remaining_secret[0];
+     1625:  283:            i++;
+        -:  284:        }
+        -:  285:
+     1625:  286:        if (literal_count == 127) flush_literal_buffer(map_file, literal_buffer, &literal_count);
+     1625:  287:        if (i > total_bytes_processed) {
+     1625:  288:            total_bytes_processed = i;
+     1625:  289:            printf("\rProcessando: %.2f%%", (double)total_bytes_processed / secret_size * 100.0);
+     1625:  290:            fflush(stdout);
+        -:  291:        }
+        -:  292:    }
+        -:  293:
+        1:  294:    flush_literal_buffer(map_file, literal_buffer, &literal_count);
+        1:  295:    fclose(map_file);
+        1:  296:    printf("\n--- Maping Process Finished ---\n");
+        -:  297:
+        1:  298:    if (encrypt_file(map_filename) != 0) {
+        1:  299:        fprintf(stderr, "Error encrypting the map file.\n");
+        -:  300:    }
+        -:  301:
+        1:  302:    free(secret_data);
+        2:  303:    for (int i = 0; i < num_carriers; i++) {
+       1*:  304:        if(carriers[i].data) { free(carriers[i].data); if(carriers[i].engine == ENGINE_SUFFIX_TREE && carriers[i].index.tree) st_free(carriers[i].index.tree); }
+        -:  305:    }
+        1:  306:    free(carriers);
+        1:  307:    free(args);
+        -:  308:
+        1:  309:    return 0;
+        -:  310:}

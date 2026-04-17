@@ -120,7 +120,7 @@ SuffixTree* st_create(const char* text, size_t len) {
     tree->active_edge_idx = -1;
     tree->remaining = 0;
 
-    for (int i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++) {
         (*tree->global_end)++;
         extend(tree, i);
     }
