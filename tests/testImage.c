@@ -112,11 +112,31 @@ TEST(test_format_name_jpeg) {
     CHECK(strcmp(name, "JPEG") == 0);
 }
 
+TEST(test_format_name_png) {
+    CHECK(strcmp(format_name(IMG_PNG), "PNG") == 0);
+}
+
+TEST(test_format_name_gif) {
+    CHECK(strcmp(format_name(IMG_GIF), "GIF") == 0);
+}
+
+TEST(test_format_name_tiff) {
+    CHECK(strcmp(format_name(IMG_TIFF), "TIFF") == 0);
+}
+
+TEST(test_format_name_raw) {
+    CHECK(strcmp(format_name(IMG_RAW), "RAW") == 0);
+}
+
 TEST(test_format_name_unsupported) {
     const char* name = format_name(IMG_UNSUPPORTED);
     CHECK(name != NULL);  /* should return something like "unsupported" */
 }
 
+TEST(test_format_name_invalid_enum) {
+    const char* name = format_name((image_format_t)999);
+    CHECK(strcmp(name, "unsupported") == 0);
+}
 
 TEST(test_is_image_bmp_yes) {
     CHECK(is_image_file("photo.bmp") == true);
@@ -153,7 +173,13 @@ int main(void) {
     printf("\n[format_name]\n");
     RUN(test_format_name_bmp);
     RUN(test_format_name_jpeg);
+    RUN(test_format_name_png);
+    RUN(test_format_name_gif);
+    RUN(test_format_name_tiff);
+    RUN(test_format_name_raw);
     RUN(test_format_name_unsupported);
+    RUN(test_format_name_invalid_enum);
+    
 
     printf("\n[is_image_file]\n");
     RUN(test_is_image_bmp_yes);

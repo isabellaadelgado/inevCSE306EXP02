@@ -136,6 +136,14 @@ TEST(test_cli_config_combined_flags) {
     CHECK(cfg.num_carriers == 2);
 }
 
+TEST(test_cli_unknown_flag_as_positional) {
+    char *argv[] = {"encoder", "-myfile.txt", "carrier.bmp"};
+    cli_config_t cfg;
+    int rc = parse_cli_args(3, argv, &cfg);
+    CHECK(rc == 0);
+    CHECK(strcmp(cfg.secret_file, "-myfile.txt") == 0);
+}
+
 int main(void) {
     printf("=== CLI unit tests ===\n");
 
@@ -159,6 +167,7 @@ int main(void) {
     RUN(test_cli_config_with_mode_flag);
     RUN(test_cli_config_too_few_args);
     RUN(test_cli_config_combined_flags);
+    RUN(test_cli_unknown_flag_as_positional);
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? EXIT_SUCCESS : EXIT_FAILURE;
