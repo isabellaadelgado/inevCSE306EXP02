@@ -3,17 +3,14 @@
 #include <string.h>
 #include <stdint.h>
 #include <sys/stat.h>
-#include <unistd.h> // Para getopt e getpass
-#include <stdbool.h> 
+#include <unistd.h>
+#include <getopt.h>
+#include <stdbool.h>
 #include <openssl/sha.h>
 #include <openssl/evp.h>
 
-
-
 #ifdef _WIN32
 #include <conio.h>
-#else
-#include <unistd.h>
 #endif
 
 
@@ -38,8 +35,7 @@ char *getpass(const char *prompt) {
 		} else if (i < (int)sizeof(password) - 1) {
 			password[i++] = (char)ch;
 		}
-	}
-	password[i] = '\0';
+	}	password[i] = '\0';
 	fprintf(stderr, "\n");
 	return password;
 }
