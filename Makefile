@@ -70,7 +70,7 @@ $(TEST_BASIC): tests/testBasic.c
 	@echo "Building testBasic..."
 	$(CC) $(CFLAGS) -o $@ $<
 
-test: $(TEST_ENCODER) $(TEST_DECODER) $(TEST_BASIC)
+test: $(TEST_ENCODER) $(TEST_DECODER) $(TEST_BASIC) $(TEST_CLI) $(TEST_IMAGE)
 	@echo ""
 	@echo "=============================="
 	@echo "Running encoder tests..."
@@ -87,6 +87,16 @@ test: $(TEST_ENCODER) $(TEST_DECODER) $(TEST_BASIC)
 	@echo "=============================="
 	@./$(TEST_BASIC)
 	@echo ""
+	@echo "=============================="
+	@echo "Running CLI tests..."
+	@echo "=============================="
+	@./$(TEST_CLI)
+	@echo ""
+	@echo "=============================="
+	@echo "Running image tests..."
+	@echo "=============================="
+	@./$(TEST_IMAGE)
+	@echo ""
 	@echo "All test suites passed."
 
 tests: test
@@ -96,16 +106,20 @@ coverage: clean
 	$(MAKE) CFLAGS="$(CFLAGS) $(COVFLAGS)" LDFLAGS="$(LDFLAGS) $(COVFLAGS)" all test
 	@echo ""
 	@echo "Generating gcov reports..."
-	gcov source/encoder.c source/decoder.c source/suffix_tree.c > coverage_report.txt || true
+	gcov source/encoder.c source/decoder.c source/suffix_tree.c \
+		 src/cli/cli.c src/image/image.c > coverage_report.txt || true
 	@echo ""
 	@echo "Coverage summary saved to coverage_report.txt"
 
 clean:
 	@echo "Cleaning generated files..."
-	rm -f $(TARGETS) $(OBJS_ENCODER) $(OBJS_DECODER) \
+	rm -f $(TARGETS) $(OBJS_ENCODER) $(OBJS_DECODER) $(OBJ_CLI) $(OBJ_IMAGE) \
 	      source/encoder.d source/suffix_tree.d source/decoder.d \
-	      $(TEST_ENCODER) $(TEST_DECODER) $(TEST_BASIC) \
+	      src/cli/*.d src/cli/*.o src/image/*.d src/image/*.o \
+	      $(TEST_ENCODER) $(TEST_DECODER) $(TEST_BASIC) $(TEST_CLI) $(TEST_IMAGE) \
 	      *.gcov *.gcda *.gcno source/*.gcov source/*.gcda source/*.gcno \
+	      src/cli/*.gcov src/cli/*.gcda src/cli/*.gcno \
+	      src/image/*.gcov src/image/*.gcda src/image/*.gcno \
 	      tests/*.gcov tests/*.gcda tests/*.gcno coverage_report.txt
 
 .PHONY: all clean test tests coverage
